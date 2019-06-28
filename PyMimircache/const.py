@@ -62,7 +62,7 @@ from PyMimircache.cache.random import Random
 from PyMimircache.cache.s4lru import S4LRU
 from PyMimircache.cache.slru import SLRU
 from PyMimircache.cache.clock import Clock
-from PyMimircache.cache.secondChance import SecondChance
+from PyMimircache.cache.secondChance import SecondChancewin
 
 
 from PyMimircache.cacheReader.csvReader import CsvReader
