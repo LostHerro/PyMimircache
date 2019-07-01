@@ -1,5 +1,5 @@
 import numpy as np
-import random
+import random, sys
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
@@ -7,7 +7,7 @@ from PyMimircache.cacheReader.csvReader import CsvReader
 from PyMimircache.cache.optimal import Optimal
 
 init_params = {'label': 2}
-file_name = '29_sample'
+file_name = sys.argv[1]
 reader = CsvReader('/research/george/ranktest/features/' + file_name + '.csv',
     init_params=init_params)
 
