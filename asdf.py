@@ -7,7 +7,7 @@ from PyMimircache.cacheReader.csvReader import CsvReader
 from PyMimircache.cache.optimal import Optimal
 
 init_params = {'label': 2}
-file_name = sys.argv[1]
+file_name = sys.argv[1] # Command Line Argument
 reader = CsvReader('/research/george/ranktest/features/' + file_name + '.csv',
     init_params=init_params)
 
