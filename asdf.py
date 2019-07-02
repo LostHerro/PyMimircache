@@ -19,11 +19,16 @@ opt = Optimal(cache_size, reader)
 fut_rd_arr1 = []
 # Future Reuse values
 fut_rd_arr2 = []
+
 # Median values
 med_x = []
 med_y = []
+
 # Evict Item List
 evict_lst = []
+# Evict Distance values
+ev_x = []
+ev_y = []
 
 # Dict to store the last vtime for a given id
 #id_to_vtime = {}
@@ -42,7 +47,10 @@ for request in reader:
     if temp_lst:
         med_x.append(opt.ts)
         med_y.append(np.median(temp_lst))
-    
+    if cur_ev_len == len(evict_lst) + 1:
+        ev_item_ts = -opt.pq[evict_lst[-1]]
+        ev_x.append(opt.ts)
+        ev_y.append(opt.ts - ev_item_ts)
     if (opt.ts % 10000 == 0):
         print('progress', opt.ts)
 
@@ -72,7 +80,7 @@ print('Time for Scatter Plot: ', str(t2-t1))
 plt.figure(2)
 
 plt.hist2d(x, y, bins=[opt.ts//100, 25], range=[[0, opt.ts], [0, cache_size*10]])
-plt.title('2D Histogram (Heatmap) of Future Reuse Distance Frequency and Virtual Time')
+plt.title('2D Histogram of Future Reuse Distance Frequency and Virtual Time')
 plt.xlabel('Virtual Time')
 plt.ylabel('Future Virtual Distance')
 plt.savefig('img/hist_' + file_name + '_size_' + str(cache_size) + '.png')
@@ -80,7 +88,7 @@ plt.savefig('img/hist_' + file_name + '_size_' + str(cache_size) + '.png')
 t3 = time.time()
 print('Time for 2D Histogram: ', str(t3-t2))
 
-# Median
+# Median Future Reuse Distance
 plt.figure(3)
 
 length = len(med_x)
@@ -95,4 +103,20 @@ plt.savefig('img/median_' + file_name + '_size_' + str(cache_size) + '.png')
 
 t4 = time.time()
 print('Time for Median Plot: ', str(t4-t3))
+
+# Eviction Distance
+plt.figure(4)
+
+length = len(ev_x)
+ev_x = ev_x[int(0.05*length):int(0.95*length)]
+ev_y = ev_y[int(0.05*length):int(0.95*length)]
+
+plt.scatter(ev_x, ev_y, s=0.2)
+plt.title('Scatter Plot of Evictoin Distance and Virtual Time')
+plt.xlabel('Virtual Time')
+plt.ylabel('Future Virtual Distnace')
+plt.savefig('img/evict_dist_' + file_name + '_size_' + str(cache_size) + '.png')
+
+t5 = time.time()
+print('Time for Eviction Distance Plot: ', str(t5-t4))
 
