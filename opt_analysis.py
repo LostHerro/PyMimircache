@@ -48,7 +48,7 @@ for request in reader:
     if ev_item:
         ev_x.append(opt.ts)
         ev_y.append(opt.ts - id_to_vtime[ev_item[0]])
-    if (opt.ts % 10000 == 0):
+    if (opt.ts % 100000 == 0):
         print('progress', opt.ts)
 
 t1 = time.time()  
