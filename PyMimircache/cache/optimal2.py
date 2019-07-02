@@ -18,7 +18,7 @@ if not INSTALL_PHASE:
         print("heapdict is not installed")
 
 
-class Optimal(Cache):
+class Optimal2(Cache):
     def __init__(self, cache_size, reader, **kwargs):
         super().__init__(cache_size, **kwargs)
         self.reader = reader
@@ -73,6 +73,7 @@ class Optimal(Cache):
             print(i, end='\t')
         print('')
 
+    # Modified so that returns timestamp, rather than id
     def evict(self, **kwargs):
         """
         evict one element from the cache line
@@ -80,9 +81,10 @@ class Optimal(Cache):
         :return: True on success, False on failure
         """
 
-        element = self.pq.popitem()[0]
-        return element
-
+        element_ts = self.pq.popitem()[1]
+        return -element_ts
+    
+    # Modified so that returns the last access timestamp of the item evicted, or None
     def access(self, req_item, **kwargs):
         """
         :param **kwargs: 
@@ -99,15 +101,13 @@ class Optimal(Cache):
         if self.has(obj_id, ):
             self._update(obj_id, )
             self.ts += 1
-            return True
+            return None
         else:
             self._insert(obj_id, )
-            if len(self.pq) > self.cache_size:
-                evict_item = self.evict()
-                if "evict_item_list" in kwargs:
-                    kwargs["evict_item_list"].append(evict_item)
             self.ts += 1
-            return False
+            if len(self.pq) > self.cache_size:
+                return self.evict()
+            return None
 
 
 

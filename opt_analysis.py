@@ -4,7 +4,7 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from PyMimircache.cacheReader.csvReader import CsvReader
-from PyMimircache.cache.optimal import Optimal
+from PyMimircache.cache.optimal2 import Optimal2
 
 init_params = {'label': 2}
 file_name = sys.argv[1] # Command Line Argument
@@ -13,7 +13,7 @@ reader = CsvReader('/research/george/ranktest/features/' + file_name + '.csv',
 
 cache_size = 500
 rand_factor = 0.1
-opt = Optimal(cache_size, reader)
+opt = Optimal2(cache_size, reader)
 
 # Timestamp values
 fut_rd_arr1 = []
@@ -24,8 +24,6 @@ fut_rd_arr2 = []
 med_x = []
 med_y = []
 
-# Evict Item List
-evict_lst = []
 # Evict Distance values
 ev_x = []
 ev_y = []
@@ -35,8 +33,7 @@ ev_y = []
 
 t0 = time.time()
 for request in reader:
-    cur_ev_len = len(evict_lst)
-    opt.access(request, evict_item_list=evict_lst)
+    evict_item_ts = opt.access(request)
     #id_to_vtime[request] = opt.ts
     temp_lst = []
     for req_id in opt.pq:
@@ -47,8 +44,7 @@ for request in reader:
     if temp_lst:
         med_x.append(opt.ts)
         med_y.append(np.median(temp_lst))
-    if cur_ev_len == len(evict_lst) + 1:
-        ev_item_ts = -opt.pq[evict_lst[-1]]
+    if evict_item_ts != None:
         ev_x.append(opt.ts)
         ev_y.append(opt.ts - ev_item_ts)
     if (opt.ts % 10000 == 0):
