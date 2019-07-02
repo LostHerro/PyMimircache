@@ -82,7 +82,7 @@ class Optimal(Cache):
 
         element = self.pq.popitem()[0]
         return element
-
+    
     def access(self, req_item, **kwargs):
         """
         :param **kwargs: 
