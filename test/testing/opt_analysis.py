@@ -149,7 +149,7 @@ def main():
             ser_med = pd.Series(data=avg_y_med_fut_dist)
             ser_q3 = pd.Series(data=avg_y_q3_fut_dist)
             df = pd.concat([ser_x, ser_med, ser_q3], axis=1)
-            df.to_csv('img/fut_rd_stats/' + file_name + '_' + str(cache_size) + '.csv', index=False)
+            df.to_csv('fut_rd_stats/' + file_name + '_' + str(cache_size) + '.csv', index=False)
     
         plt.close()
 
