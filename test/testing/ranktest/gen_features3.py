@@ -86,7 +86,7 @@ def generate_features(df, sample=0, hexadecimal=False):
                 freq_flg_lst[i] = True
             
             if freq_flg_lst[i]:
-                id_remove = df.iloc[index - freq_size_lst[i], 0]
+                id_remove = df.iloc[index - freq_size_lst[i], 1]
                 next_req_deletion(id_remove, freq_dict_lst[i])
             next_req_insertion(i, freq_dict_lst[i],
                 id, index, freq_arr)
