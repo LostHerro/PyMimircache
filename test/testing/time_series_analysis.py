@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-#import matplotlib
-#matplotlib.use('agg')
+import matplotlib
+matplotlib.use('agg')
 from matplotlib import pyplot as plt
 from statsmodels.tsa.arima_model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -15,7 +15,7 @@ q3_arr = df['2'].to_numpy()
 
 length = len(time_arr)
 
-red_factor = 35
+red_factor = 25
 time_arr = [time_arr[i] for i in range(length) if i % red_factor == 0]
 med_arr = [med_arr[i] for i in range(length) if i % red_factor == 0]
 q3_arr = [q3_arr[i] for i in range(length) if i % red_factor == 0]
@@ -26,7 +26,7 @@ length = len(time_arr)
 pacf_med = plot_pacf(med_arr, lags=int((length)**(0.4)))
 plt.show() """
 
-factor = 0.8
+factor = 0.9
 
 med_train = med_arr[:int(factor*length)]
 med_eval = med_arr[int(factor*length):]
@@ -40,7 +40,7 @@ res_q3 = seasonal_decompose(q3_train, freq=2500)
 res_q3.plot()
 plt.show() """
 
-sarimax_med = SARIMAX(med_train, order=(2, 0, 8), seasonal_order=(0, 0, 1, 67))
+sarimax_med = SARIMAX(med_train, order=(1, 0, 13), seasonal_order=(1, 0, 1, 93))
 #sarimax_q3 = SARIMAX(q3_train, order=(5, 1, 5), seasonal_order=(1, 1, 0, 8))
 
 fit_med = sarimax_med.fit(disp=0)
@@ -61,4 +61,5 @@ plt.scatter(time_arr, pred_med, c='b', s=2.5, edgecolors='none')
 #plt.scatter(time_arr, q3_arr, c='g', s=0.5)
 #plt.scatter(time_arr, pred_q3, c='b', s=0.5)
 
+#plt.show()
 plt.savefig('fut_rd_stats/akamai1TrafficID458_5000_' + str(red_factor) + '_' + str(factor) + '.png')
