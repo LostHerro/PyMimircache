@@ -26,7 +26,7 @@ length = len(time_arr)
 pacf_med = plot_pacf(med_arr, lags=int((length)**(0.4)))
 plt.show() """
 
-factor = 0.9
+factor = 0.8
 
 med_train = med_arr[:int(factor*length)]
 med_eval = med_arr[int(factor*length):]
@@ -40,7 +40,7 @@ res_q3 = seasonal_decompose(q3_train, freq=2500)
 res_q3.plot()
 plt.show() """
 
-sarimax_med = SARIMAX(med_train, order=(1, 0, 13), seasonal_order=(1, 0, 1, 93))
+sarimax_med = SARIMAX(med_train, order=(3, 0, 12), seasonal_order=(1, 0, 1, 93))
 #sarimax_q3 = SARIMAX(q3_train, order=(5, 1, 5), seasonal_order=(1, 1, 0, 8))
 
 fit_med = sarimax_med.fit(disp=0)

@@ -107,7 +107,9 @@ def generate_features(df, sample=0, hexadecimal=False):
     for i in range(5):
         freq_arr[:,i] /= freq_size_lst[i]
 
-    df['vtime'] = df.index.to_numpy() + 1
+    """ df['time'] = df['time'].apply(
+        lambda x: x / 1e6
+    ) """
 
     df['access_day'] = df['time'].apply(
         lambda x: int(x % 6.048e5 / 8.64e4))
@@ -118,12 +120,8 @@ def generate_features(df, sample=0, hexadecimal=False):
     df['access_min'] = df['time'].apply(
         lambda x: int(x % 3600 / 60))
 
-    f = lambda x: np.arctan(x/500)
-    stat_arr = f(stat_arr)
-
-    df = df.join(pd.DataFrame(stat_arr, 
-        columns=['dist_min', 'dist_max', 'dist_mean', 'dist_median',
-        'dist_range', 'dist_std', 'dist_q1', 'dist_q3']))
+    df = df.join(pd.DataFrame(rd_arr, 
+        columns=['rd1', 'rd2', 'rd3', 'rd4', 'rd5']))
 
     df = df.join(pd.DataFrame(freq_arr,
         columns=['freq64', 'freq256', 'freq1024', 'freq4096', 'freq16384']))
@@ -137,13 +135,13 @@ def main():
     
     file_name = sys.argv[1]
     output_add_on = sys.argv[2]
-    source_file = 'traces/' + file_name
+    source_file = 'traces/shared/' + file_name
     target_dest = 'features/' + file_name + '_' + output_add_on + '.csv'
 
     col_names = ['time', 'id']
     data_types = {'time': 'float64', 'id': 'str'}
 
-    df = pd.read_csv(source_file, sep='\s+', usecols=[1,4], header=0, names=col_names, dtype=data_types
+    df = pd.read_csv(source_file, sep='\s+', usecols=[0,5], header=0, names=col_names, dtype=data_types
         #,nrows=10000
         )
     
