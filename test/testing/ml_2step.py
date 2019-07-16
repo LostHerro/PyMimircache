@@ -244,7 +244,7 @@ for eval_df in eval_dfs:
 
 model = CacheNet(p=0.5)
 criterion = torch.nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.25)
+optimizer = optim.Adam(model.parameters(), lr=0.1)
 
 lambda1 = lambda epoch: 0.99
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
@@ -252,7 +252,7 @@ scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 
 model.train()
 print(train_target)
-for t in range(200):
+for t in range(300):
     # Forward Pass
     y_pred = model(train_feat)
 
@@ -277,7 +277,7 @@ with torch.no_grad():
     print(criterion(y_pred, train_target))
 
     model.eval()
-    num_evicted = 10
+    num_evicted = 100
     model_predictions = []
     rec_predictions = []
 
