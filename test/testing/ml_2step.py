@@ -4,16 +4,24 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import random, math, bisect, time, sys
-from collections import defaultdict, deque
-from sklearn.preprocessing import normalize
+import random, math, time, sys
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+from collections import deque
+from PyMimircache.cacheReader.csvReader import CsvReader
+from PyMimircache.cache.optimal import Optimal
 
 '''
 Initial Stuff
 '''
 
 file_name = sys.argv[1]
-q3_fut_rd_arr = pd.read_csv('fut_rd_stats/' + file_name + '_5000.csv')['2'].to_numpy()
+if sys.argv[2] == 'med':
+    num = '1'
+if sys.argv[2] == 'q3':
+    num = '2'
+q3_fut_rd_arr = pd.read_csv('fut_rd_stats/' + file_name + '_5000.csv')[num].to_numpy()
 med_q3 = np.median(q3_fut_rd_arr)
 
 damp_factor = 2000
@@ -108,11 +116,11 @@ def create_dist_df(feature_df, samples, dists, start_time, eval=False):
     train_data = []
     for t in samples:
         if not eval:
-            logit_dist_val = get_logit_dist(dists[t - start_time], t)
+            logit_dist_val = get_logit_dist(dists[t], t)
         else:
-            logit_dist_val = dists[t - start_time] + t # not actually logistic but oh well
+            logit_dist_val = dists[t] + t # Actually the final ts for next req of that id
         
-        delta = feature_df.shape[0] + start_time - t
+        delta = feature_df.shape[0] - t
 
         ser = feature_df.loc[t].to_list()
         for i in range(3,8):
@@ -132,10 +140,10 @@ def gen_train_eval_data(df):
     df_len = df.shape[0]
     df['vtime'] = df.index
 
-    train_factor = random.uniform(0.5, 0.7)
+    train_factor = random.uniform(0.6, 0.7)
     
     tc = time.time()
-    n_samples = 300000
+    n_samples = 500000
 
     time_samples = np.random.randint(0, int(train_factor * df_len), size=n_samples)
     learn_data = df.iloc[:int(train_factor * df_len)]
@@ -147,31 +155,65 @@ def gen_train_eval_data(df):
     print('Time to Construct Training DataFrame:')
     print(td-tc)
 
-    te = time.time()
-    n_samples = 50
-    sample_size = 1000
+    reader_params = {
+        'label': 2,
+        'real_time': 1
+    }
+
+    reader = CsvReader('ranktest/features/' + file_name + '_feat16.csv',
+        init_params=reader_params)
     
-    eval_data = df.iloc[int(train_factor * df_len):]
-    eval_dists = get_next_access_dist(eval_data['id'])
+    cache_size = 5000
+    opt = Optimal(cache_size, reader)
+
+    last_req_dict = {}
+
+    #eval_data = df.iloc[int(train_factor * df_len):]
+    #eval_dists = get_next_access_dist(eval_data['id'])
+    dists = get_next_access_dist(df['id'])
     eval_dfs = []
 
-    for i in range(n_samples):
-        time_samples = np.random.randint(int(train_factor * df_len), int(df_len*.99), size=sample_size)
-        eval_df = create_dist_df(eval_data, time_samples, eval_dists, int(train_factor * df_len), eval=True)
-        eval_dfs.append(eval_df)
+    n_samples = 150
+    time_stops = np.random.randint(int(train_factor*df_len), int(df_len*.95), size=n_samples)
+    time_stops.sort()
+    ret_time_stops = time_stops.copy()
+    time_stops = deque(time_stops)
 
-    tf = time.time()
+    for index, request in enumerate(df['id']):
+        opt.access(request)
+        last_req_dict[request] = index
+
+        if time_stops and index == time_stops[0]:
+            time_samples = []
+            for req_id in opt.pq.keys():
+                time_samples.append(last_req_dict[req_id])
+            eval_df = create_dist_df(df, time_samples, dists, int(train_factor * df_len), eval=True)
+            eval_dfs.append(eval_df)
+            time_stops.popleft()
+        
+        if not time_stops:
+            break
+
+    te = time.time()
     print('Time to Construct Evaluation DataFrames:')
-    print(tf - te)
+    print(te - td)
 
-    return train_df, eval_dfs
+    return train_df, eval_dfs, ret_time_stops
 
 '''
 Pytorch Integration Section
 '''
+t1 = time.time()
 
-train_df, eval_dfs = gen_train_eval_data(pd.read_csv('ranktest/features/' + file_name + '_feat16.csv'))
-normalizing_func = lambda x: (x-np.mean(x, axis=0))/np.std(x, axis=0)
+train_df, eval_dfs, times = gen_train_eval_data(pd.read_csv('ranktest/features/' + file_name + '_feat16.csv'))
+#normalizing_func = lambda x: (x-np.mean(x, axis=0))/np.std(x, axis=0)
+def normalizing_func(x):
+    stdev = np.std(x, axis=0)
+    ret = np.zeros(x.shape, dtype='float64')
+    for i in range(ret.shape[1]): # iterate across columns
+        if stdev[i] != 0:
+            ret[:, i] = (x[:, i] - np.mean(x[:, i]))/stdev[i]
+    return ret
 #print(train_df)
 #print(eval_df)
 
@@ -202,12 +244,13 @@ for eval_df in eval_dfs:
 
 model = CacheNet(p=0.5)
 criterion = torch.nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.1)
+optimizer = optim.Adam(model.parameters(), lr=0.25)
 
-#lambda1 = lambda epoch: 0.99
-#scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
+lambda1 = lambda epoch: 0.99
+scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 #train_feat = torch.randn(len(train_target), 34)
 
+model.train()
 print(train_target)
 for t in range(200):
     # Forward Pass
@@ -215,16 +258,16 @@ for t in range(200):
 
     # Loss
     loss = criterion(y_pred, train_target)
-    if (t % 5 == 0):
-        print(t, loss.item())
     if (t % 10 == 0):
+        print(t, loss.item())
+    if (t % 20 == 0):
         print(y_pred)
 
     # Backward Pass And Update
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    #scheduler.step()
+    scheduler.step()
 
 # Evaluation of Model
 with torch.no_grad():
@@ -234,27 +277,52 @@ with torch.no_grad():
     print(criterion(y_pred, train_target))
 
     model.eval()
-    num_evicted = 5
-    predictions = []
+    num_evicted = 10
+    model_predictions = []
+    rec_predictions = []
+
     for i in range(len(eval_feats)):
         y_pred = model(eval_feats[i])
         pred_lst = y_pred.numpy().flatten()
-        pred_lst += train_feat[:,0].numpy() # add the vtimes in
+        pred_lst += eval_feats[i][:,0].numpy() # add the vtimes in
 
+        # Gives indices for the num_evicted items that will be evicted by model
         pred_evict_inds = np.argsort(pred_lst)[-1*num_evicted:]
-        actual_times = [eval_targets[i][index] for index in pred_evict_inds]
+
+        # Gives indices for the num_evicted items that will be evicted by pure recency
+        rec_evict_inds = np.argsort(eval_feats[i][:,0].numpy())[:num_evicted]
+
+        # Actual times for model evicted items
+        actual_times_model = [eval_targets[i][index] for index in pred_evict_inds]
+
+        # Actual times for recency evicted items
+        actual_times_rec = [eval_targets[i][index] for index in rec_evict_inds]
         
+        # Create a dict for actual time -> index in sorted list (lower is better)
         sorted_times = eval_targets[i].tolist()
         sorted_times.sort(reverse=True)
         time_dict = {}
         for index, tm in enumerate(sorted_times):
             time_dict[tm] = index
 
-        curr_pred = [time_dict[tm] for tm in actual_times]
+        # Get the ranks for the evicted items by model
+        curr_pred_model = [time_dict[tm] for tm in actual_times_model]
+
+        # Get the ranks for the evicted items by recency
+        curr_pred_rec = [time_dict[tm] for tm in actual_times_rec]
         
-        predictions.append(np.mean(curr_pred))
+        model_predictions.append(np.mean(curr_pred_model))
+        rec_predictions.append(np.mean(curr_pred_rec))
         #print(predictions)
 
-    print(np.mean(predictions))
+    t2 = time.time()
+    print('Time to Train:')
+    print(str(t2-t1))
+
+    plt.figure(0)
+    plt.scatter(times, model_predictions, s=4.0, c='g', edgecolors='none')
+    plt.scatter(times, rec_predictions, s=4.0, c='b', edgecolors='none')
+    plt.savefig('eval/' + file_name + '_' + sys.argv[2] + '_' + str(time.time()) + '.png')
+    plt.close()
 
 

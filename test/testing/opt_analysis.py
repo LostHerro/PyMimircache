@@ -20,7 +20,7 @@ def main():
     if 'all' in write_modes:
         write_modes = {'rd', 'auto', 'ev', 'rd_csv'}
 
-    reader = CsvReader('/research/george/ranktest/traces/shared/' + file_name + '_no_feat.csv',
+    reader = CsvReader('ranktest/traces/shared/' + file_name + '_no_feat.csv',
         init_params=init_params)
 
     cache_size = 5000

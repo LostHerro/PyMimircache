@@ -67,7 +67,7 @@ class SCache(Cache):
         super().__init__(*args, **kwargs)
         self.cache = {}
         self.counter = 0
-        self.index = 0s
+        self.index = 0
 
     def evict(self, **kwargs):
         pass
