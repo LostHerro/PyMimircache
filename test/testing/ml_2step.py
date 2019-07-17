@@ -24,12 +24,14 @@ if sys.argv[2] == 'q3':
 q3_fut_rd_arr = pd.read_csv('fut_rd_stats/' + file_name + '_5000.csv')[num].to_numpy()
 med_q3 = np.median(q3_fut_rd_arr)
 
-damp_factor = 2000
+damp_factor = med_q3
 
 # Pretend to have perfect information
-def avg_fut_rd(vtime, med=False):
+def avg_fut_rd(vtime, med=True):
     if not med:
         return q3_fut_rd_arr[int(vtime / 50)]
+    else:
+        return med_q3
     
 
 
@@ -69,7 +71,7 @@ class CacheNet(nn.Module):
         inputs = self.h4_drop(inputs)
         inputs = self.out_layer(inputs)
         if self.training:
-            output = torch.atan((inputs - avg_rds)/damp_factor)
+            output = torch.sigmoid((inputs - avg_rds)/damp_factor)
         else:
             output = inputs
 
@@ -104,13 +106,13 @@ def get_next_access_dist(id_ser):
 
 def create_dist_df(feature_df, samples, dists, start_time, eval=False):
 
-    # Returns logistic virtual distance (arctan)
+    # Returns logistic virtual distance (sigmoid)
     def get_logit_dist(next_access_dist, timestamp):
 
         if next_access_dist != -1:
-            return np.arctan((next_access_dist - avg_fut_rd(timestamp))/damp_factor)
-        else: # return pi/2
-            return np.pi / 2
+            return 1/(1 + np.exp(-(next_access_dist - avg_fut_rd(timestamp))/damp_factor))
+        else: # return 1
+            return 1
 
     
     train_data = []
@@ -243,8 +245,8 @@ for eval_df in eval_dfs:
     #eval_target = torch.tensor(eval_target, dtype=torch.float)
 
 model = CacheNet(p=0.5)
-criterion = torch.nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.1)
+criterion = torch.nn.BCELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.2)
 
 lambda1 = lambda epoch: 0.99
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
