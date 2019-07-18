@@ -135,13 +135,13 @@ def main():
     
     file_name = sys.argv[1]
     output_add_on = sys.argv[2]
-    source_file = 'traces/' + file_name
+    source_file = 'traces/shared/' + file_name
     target_dest = 'features/' + file_name + '_' + output_add_on + '.csv'
 
     col_names = ['time', 'id']
     data_types = {'time': 'float64', 'id': 'str'}
 
-    df = pd.read_csv(source_file, sep='\s+', usecols=[0,1], header=0, names=col_names, dtype=data_types
+    df = pd.read_csv(source_file, sep='\s+', usecols=[0,4], header=0, names=col_names, dtype=data_types
         #,nrows=10000
         )
     

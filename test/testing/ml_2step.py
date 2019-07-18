@@ -46,9 +46,9 @@ class CacheNet(nn.Module):
         self.in_drop = nn.Dropout(p=p)
         #self.h1_layer = nn.Linear(1024, 256)
         #self.h1_drop = nn.Dropout(p=p)
-        #self.h2_layer = nn.Linear(256, 64)
-        #self.h2_drop = nn.Dropout(p=p)
-        self.h3_layer = nn.Linear(64,16)
+        self.h2_layer = nn.Linear(64, 32)
+        self.h2_drop = nn.Dropout(p=p)
+        self.h3_layer = nn.Linear(32,16)
         self.h3_drop = nn.Dropout(p=p)
         self.h4_layer = nn.Linear(16,4)
         self.h4_drop = nn.Dropout(p=p)
@@ -59,12 +59,11 @@ class CacheNet(nn.Module):
         vtimes = inputs[:, 0].numpy()
         avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes])
         inputs = inputs[:, 1:]
-        inputs = F.relu(self.in_layer(inputs))
-        inputs = self.in_drop(inputs)
+        inputs = self.in_layer(inputs)
         #inputs = F.relu(self.h1_layer(inputs))
         #inputs = self.h1_drop(inputs)
-        #inputs = F.relu(self.h2_layer(inputs))
-        #inputs = self.h2_drop(inputs)
+        inputs = F.relu(self.h2_layer(inputs))
+        inputs = self.h2_drop(inputs)
         inputs = F.relu(self.h3_layer(inputs))
         inputs = self.h3_drop(inputs)
         inputs = F.relu(self.h4_layer(inputs))
@@ -140,7 +139,7 @@ def gen_train_eval_data(df):
 
     df = df.iloc[int(0.05*df.shape[0]):int(0.95*df.shape[0])].reset_index(drop=True)
     df_len = df.shape[0]
-    df['vtime'] = df.index
+    df.insert(loc=2, column='vtime', value=df.index)
 
     train_factor = random.uniform(0.6, 0.7)
     
@@ -245,8 +244,8 @@ for eval_df in eval_dfs:
     #eval_target = torch.tensor(eval_target, dtype=torch.float)
 
 model = CacheNet(p=0.5)
-criterion = torch.nn.BCELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.2)
+criterion = torch.nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.1)
 
 lambda1 = lambda epoch: 0.99
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
@@ -254,7 +253,7 @@ scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 
 model.train()
 print(train_target)
-for t in range(300):
+for t in range(200):
     # Forward Pass
     y_pred = model(train_feat)
 
