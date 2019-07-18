@@ -24,10 +24,10 @@ if sys.argv[2] == 'q3':
 q3_fut_rd_arr = pd.read_csv('fut_rd_stats/' + file_name + '_5000.csv')[num].to_numpy()
 med_q3 = np.median(q3_fut_rd_arr)
 
-damp_factor = med_q3
+damp_factor = med_q3 / 4
 
 # Pretend to have perfect information
-def avg_fut_rd(vtime, med=True):
+def avg_fut_rd(vtime, med=False):
     if not med:
         return q3_fut_rd_arr[int(vtime / 50)]
     else:
@@ -56,8 +56,6 @@ class CacheNet(nn.Module):
 
     # Head of feature vector is the virtual time (column 0)
     def forward(self, inputs):
-        vtimes = inputs[:, 0].numpy()
-        avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes])
         inputs = inputs[:, 1:]
         inputs = self.in_layer(inputs)
         #inputs = F.relu(self.h1_layer(inputs))
@@ -69,10 +67,7 @@ class CacheNet(nn.Module):
         inputs = F.relu(self.h4_layer(inputs))
         inputs = self.h4_drop(inputs)
         inputs = self.out_layer(inputs)
-        if self.training:
-            output = torch.sigmoid((inputs - avg_rds)/damp_factor)
-        else:
-            output = inputs
+        output = inputs
 
         return output
 
@@ -256,6 +251,9 @@ print(train_target)
 for t in range(200):
     # Forward Pass
     y_pred = model(train_feat)
+    vtimes = train_feat[:, 0].numpy()
+    avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes])
+    y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
 
     # Loss
     loss = criterion(y_pred, train_target)
@@ -272,12 +270,13 @@ for t in range(200):
 
 # Evaluation of Model
 with torch.no_grad():
+
+    model.eval()
     # Training Score
     y_pred = model(train_feat)
     print('Training Score:')
     print(criterion(y_pred, train_target))
-
-    model.eval()
+    
     num_evicted = 100
     model_predictions = []
     rec_predictions = []
