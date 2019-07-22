@@ -25,7 +25,8 @@ q3_fut_rd_arr = pd.read_csv('fut_rd_stats/' + file_name + '_5000.csv')[num].to_n
 
 mode = sys.argv[3] # "perfect", "break", or "none"
 
-train_factor = random.uniform(0.6, 0.7)
+train_factor = 0.65
+#train_factor = random.uniform(0.6, 0.7)
 
 med_q3 = np.median(q3_fut_rd_arr[:int(train_factor*len(q3_fut_rd_arr))])
 damp_factor = med_q3 / 2
@@ -145,7 +146,7 @@ def gen_train_eval_data(df):
     df.insert(loc=2, column='vtime', value=df.index)
     
     tc = time.time()
-    n_samples = 500000
+    n_samples = 0
 
     time_samples = np.random.randint(0, int(train_factor * df_len), size=n_samples)
     learn_data = df.iloc[:int(train_factor * df_len)]
@@ -165,7 +166,7 @@ def gen_train_eval_data(df):
     reader = CsvReader('ranktest/features/' + file_name + '_feat16.csv',
         init_params=reader_params)
     
-    cache_size = 5000
+    cache_size = int(sys.argv[4])
     opt = Optimal(cache_size, reader)
 
     last_req_dict = {}
@@ -175,12 +176,13 @@ def gen_train_eval_data(df):
     dists = get_next_access_dist(df['id'])
     eval_dfs = []
 
-    n_samples = 100
+    n_samples = 2
+    np.random.seed(42)
     time_stops = np.random.randint(int(train_factor*df_len), int(df_len*.95), size=n_samples)
     time_stops.sort()
     ret_time_stops = time_stops.copy()
     time_stops = deque(time_stops)
-
+    print(time_stops)
     for index, request in enumerate(df['id']):
         opt.access(request)
         last_req_dict[request] = index
@@ -219,14 +221,14 @@ def normalizing_func(x):
 #print(train_df)
 #print(eval_df)
 
-train_feat = train_df.drop(columns=[0,1,
+""" train_feat = train_df.drop(columns=[0,1,
     'final']).astype('float64').to_numpy()
 train_target = train_df[['final']].astype('float64').to_numpy()
 
 train_feat = np.concatenate((train_feat[:,[0]], normalizing_func(train_feat[:,1:])), axis=1)
 
 train_feat = torch.tensor(train_feat, dtype=torch.float)
-train_target = torch.tensor(train_target, dtype=torch.float)
+train_target = torch.tensor(train_target, dtype=torch.float) """
 
 eval_feats = []
 eval_targets = []
@@ -253,12 +255,12 @@ scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 #train_feat = torch.randn(len(train_target), 34)
 
 model.train()
-print(train_target)
+""" print(train_target)
 
 vtimes = train_feat[:, 0].numpy()
-avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes])
+avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes]) """
 
-for t in range(400):
+""" for t in range(400):
     # Forward Pass
     y_pred = model(train_feat)
     y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
@@ -274,54 +276,56 @@ for t in range(400):
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    scheduler.step()
+    scheduler.step() """
 
 # Evaluation of Model
 with torch.no_grad():
 
     model.eval()
     # Training Score
-    y_pred = model(train_feat)
+    """ y_pred = model(train_feat)
     y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
     print('Training Score:')
     print(criterion(y_pred, train_target))
-    print(y_pred)
+    print(y_pred) """
     
-    num_evicted = 100
+    num_evicted = 5
     model_predictions = []
     rec_predictions = []
 
     for i in range(len(eval_feats)):
-        y_pred = model(eval_feats[i])
-        pred_lst = y_pred.numpy().flatten()
-        pred_lst += eval_feats[i][:,0].numpy() # add the vtimes in
+        #y_pred = model(eval_feats[i])
+        #pred_lst = y_pred.numpy().flatten()
+        #pred_lst += eval_feats[i][:,0].numpy() # add the vtimes in
 
         # Gives indices for the num_evicted items that will be evicted by model
-        pred_evict_inds = np.argsort(pred_lst)[-1*num_evicted:]
+        #pred_evict_inds = np.argsort(pred_lst)[-1*num_evicted:]
 
         # Gives indices for the num_evicted items that will be evicted by pure recency
         rec_evict_inds = np.argsort(eval_feats[i][:,0].numpy())[:num_evicted]
-
+        print("\t".join(["%8d" % z for z in eval_feats[i][:,0].numpy()]))
+        print(rec_evict_inds)
         # Actual times for model evicted items
-        actual_times_model = [eval_targets[i][index] for index in pred_evict_inds]
+        #actual_times_model = [eval_targets[i][index] for index in pred_evict_inds]
 
         # Actual times for recency evicted items
         actual_times_rec = [eval_targets[i][index] for index in rec_evict_inds]
-
+        print(actual_times_rec)
         # Create a dict for actual time -> index in sorted list (lower is better)
         sorted_times = eval_targets[i].tolist()
         sorted_times.sort(reverse=True)
+        print(sorted_times)
         time_dict = {}
         for index, tm in enumerate(sorted_times):
             time_dict[tm] = index
 
         # Get the ranks for the evicted items by model
-        curr_pred_model = [time_dict[tm] for tm in actual_times_model]
+        #curr_pred_model = [time_dict[tm] for tm in actual_times_model]
 
         # Get the ranks for the evicted items by recency
         curr_pred_rec = [time_dict[tm] for tm in actual_times_rec]
-
-        model_predictions.append(np.mean(curr_pred_model))
+        print(curr_pred_rec)
+        #model_predictions.append(np.mean(curr_pred_model))
         rec_predictions.append(np.mean(curr_pred_rec))
         #print(predictions)
 
@@ -329,10 +333,10 @@ with torch.no_grad():
     print('Time to Train:')
     print(str(t2-t1))
 
-    plt.figure(0)
+    """ plt.figure(0)
     plt.scatter(times, model_predictions, s=4.0, c='g', edgecolors='none')
     plt.scatter(times, rec_predictions, s=4.0, c='b', edgecolors='none')
     plt.savefig('eval/' + file_name + '_' + sys.argv[2] + '_' + str(time.time()) + '.png')
-    plt.close()
+    plt.close() """
 
 
