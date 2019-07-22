@@ -176,10 +176,11 @@ def gen_train_eval_data(df):
     dists = get_next_access_dist(df['id'])
     eval_dfs = []
 
-    n_samples = 2
+    n_samples = 1
     np.random.seed(42)
     time_stops = np.random.randint(int(train_factor*df_len), int(df_len*.95), size=n_samples)
     time_stops.sort()
+    time_stops = [(time_stops[0] + i) for i in range(5)]
     ret_time_stops = time_stops.copy()
     time_stops = deque(time_stops)
     print(time_stops)
@@ -303,7 +304,7 @@ with torch.no_grad():
 
         # Gives indices for the num_evicted items that will be evicted by pure recency
         rec_evict_inds = np.argsort(eval_feats[i][:,0].numpy())[:num_evicted]
-        print("\t".join(["%8d" % z for z in eval_feats[i][:,0].numpy()]))
+        print("\t".join(["%7d" % z for z in eval_feats[i][:,0].numpy()]))
         print(rec_evict_inds)
         # Actual times for model evicted items
         #actual_times_model = [eval_targets[i][index] for index in pred_evict_inds]

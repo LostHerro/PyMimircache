@@ -165,7 +165,7 @@ def gen_train_eval_data(df):
     reader = CsvReader('ranktest/features/' + file_name + '_feat16.csv',
         init_params=reader_params)
     
-    cache_size = 5000
+    cache_size = 10000
     opt = Optimal(cache_size, reader)
 
     last_req_dict = {}
