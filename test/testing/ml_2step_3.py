@@ -5,12 +5,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import random, math, time, sys
+
+from collections import deque
+from PyMimircache import Cachecow
+from heapdict import heapdict
+
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
-from collections import deque
-from PyMimircache.cacheReader.csvReader import CsvReader
-from PyMimircache.cache.optimal import Optimal
+
+
 
 '''
 Initial Stuff
@@ -25,11 +29,10 @@ q3_fut_rd_arr = pd.read_csv('fut_rd_stats/' + file_name + '_5000.csv')[num].to_n
 
 mode = sys.argv[3] # "perfect", "break", or "none"
 
-train_factor = 0.45
-#train_factor = random.uniform(0.6, 0.7)
+train_factor = random.uniform(0.6, 0.7)
 
 med_q3 = np.median(q3_fut_rd_arr[:int(train_factor*len(q3_fut_rd_arr))])
-damp_factor = med_q3 / 2
+damp_factor = med_q3 / 1.5
 
 def avg_fut_rd(vtime, mode=mode):
     if mode == 'none':
@@ -53,11 +56,11 @@ class CacheNet(nn.Module):
         super(CacheNet, self).__init__()
         self.in_layer = nn.Linear(self.N_TRUE_FEATURES, 64)
         self.in_drop = nn.Dropout(p=p)
-        #self.h1_layer = nn.Linear(1024, 256)
+        #self.h1_layer = nn.Linear(1024,256)
         #self.h1_drop = nn.Dropout(p=p)
-        self.h2_layer = nn.Linear(64, 32)
-        self.h2_drop = nn.Dropout(p=p)
-        self.h3_layer = nn.Linear(32,16)
+        #self.h2_layer = nn.Linear(64,40)
+        #self.h2_drop = nn.Dropout(p=p)
+        self.h3_layer = nn.Linear(64,16)
         self.h3_drop = nn.Dropout(p=p)
         self.h4_layer = nn.Linear(16,4)
         self.h4_drop = nn.Dropout(p=p)
@@ -69,8 +72,8 @@ class CacheNet(nn.Module):
         inputs = self.in_layer(inputs)
         #inputs = F.relu(self.h1_layer(inputs))
         #inputs = self.h1_drop(inputs)
-        inputs = F.relu(self.h2_layer(inputs))
-        inputs = self.h2_drop(inputs)
+        #inputs = F.relu(self.h2_layer(inputs))
+        #inputs = self.h2_drop(inputs)
         inputs = F.relu(self.h3_layer(inputs))
         inputs = self.h3_drop(inputs)
         inputs = F.relu(self.h4_layer(inputs))
@@ -84,7 +87,6 @@ class CacheNet(nn.Module):
 '''
 Data Processing Section
 '''
-# TODO: Fix this whole thing to get rid of t_now and stuff...
 N_FEATURES = 20 #???? idk
 
 def get_next_access_dist(id_ser):
@@ -100,7 +102,7 @@ def get_next_access_dist(id_ser):
         if req in next_access_time:
             next_access_dist.append(index - next_access_time[req])
         else:
-            next_access_dist.append(len(id_ser))
+            next_access_dist.append(len(q3_fut_rd_arr) * 50)
         next_access_time[req] = index
     
     next_access_dist.reverse()
@@ -123,9 +125,9 @@ def create_dist_df(feature_df, samples, dists, start_time, eval=False):
         if not eval:
             logit_dist_val = get_logit_dist(dists[t], t)
         else:
-            logit_dist_val = dists[t] + t # Actually the final ts for next req of that id
+            logit_dist_val = 0 # dummy value
         
-        delta = feature_df.shape[0] - t
+        delta = feature_df.shape[0] - t + start_time
 
         ser = feature_df.loc[t].to_list()
         for i in range(3,8):
@@ -146,7 +148,7 @@ def gen_train_eval_data(df):
     df.insert(loc=2, column='vtime', value=df.index)
     
     tc = time.time()
-    n_samples = 0
+    n_samples = 500000
 
     time_samples = np.random.randint(0, int(train_factor * df_len), size=n_samples)
     learn_data = df.iloc[:int(train_factor * df_len)]
@@ -155,62 +157,31 @@ def gen_train_eval_data(df):
     train_df = create_dist_df(learn_data, time_samples, train_dists, 0)
 
     td = time.time()
-    print('Time to Construct Training DataFrame:')
-    print(td-tc)
+    print('Time to Construct Training DataFrame: ', str(td-tc))
 
-    reader_params = {
-        'label': 2,
-        'real_time': 1
-    }
+    time_samples = list(range(int(train_factor * df_len), df_len))
+    eval_data = df.iloc[int(train_factor * df_len):]
+    eval_dists = get_next_access_dist(eval_data['id'])
 
-    reader = CsvReader('ranktest/features/' + file_name + '_feat16.csv',
-        init_params=reader_params)
-    
-    cache_size = int(sys.argv[4])
-    opt = Optimal(cache_size, reader)
+    eval_df = create_dist_df(eval_data, time_samples, eval_dists, int(train_factor * df_len), eval=True)
 
-    last_req_dict = {}
-
-    #eval_data = df.iloc[int(train_factor * df_len):]
-    #eval_dists = get_next_access_dist(eval_data['id'])
-    dists = get_next_access_dist(df['id'])
-    eval_dfs = []
-
-    n_samples = 1
-    np.random.seed(42)
-    time_stops = np.random.randint(int(train_factor*df_len), int(df_len*.95), size=n_samples)
-    time_stops.sort()
-    time_stops = [(time_stops[0] + i) for i in range(5)]
-    ret_time_stops = time_stops.copy()
-    time_stops = deque(time_stops)
-    print(time_stops)
-    for index, request in enumerate(df['id']):
-        opt.access(request)
-        last_req_dict[request] = index
-
-        if time_stops and index == time_stops[0]:
-            time_samples = []
-            for req_id in opt.pq.keys():
-                time_samples.append(last_req_dict[req_id])
-            eval_df = create_dist_df(df, time_samples, dists, int(train_factor * df_len), eval=True)
-            eval_dfs.append(eval_df)
-            time_stops.popleft()
-        
-        if not time_stops:
-            break
+    # For later purposes of PyMimircache readers
+    with open('temp_trace_' + file_name + '.txt', 'w+') as f:
+        for i in eval_data['id']:
+            f.write(str(i))
+            f.write('\n')
 
     te = time.time()
-    print('Time to Construct Evaluation DataFrames:')
-    print(te - td)
+    print('Time to Construct Evaluation DataFrame: ', str(te-td))
 
-    return train_df, eval_dfs, ret_time_stops
+    return train_df, eval_df
 
 '''
 Pytorch Integration Section
 '''
 t1 = time.time()
 
-train_df, eval_dfs, times = gen_train_eval_data(pd.read_csv('ranktest/features/' + file_name + '_feat16.csv'))
+train_df, eval_df = gen_train_eval_data(pd.read_csv('ranktest/features/' + file_name + '_feat16.csv'))
 #normalizing_func = lambda x: (x-np.mean(x, axis=0))/np.std(x, axis=0)
 def normalizing_func(x):
     stdev = np.std(x, axis=0)
@@ -222,30 +193,21 @@ def normalizing_func(x):
 #print(train_df)
 #print(eval_df)
 
-""" train_feat = train_df.drop(columns=[0,1,
+train_feat = train_df.drop(columns=[0,1,
     'final']).astype('float64').to_numpy()
 train_target = train_df[['final']].astype('float64').to_numpy()
 
 train_feat = np.concatenate((train_feat[:,[0]], normalizing_func(train_feat[:,1:])), axis=1)
 
 train_feat = torch.tensor(train_feat, dtype=torch.float)
-train_target = torch.tensor(train_target, dtype=torch.float) """
+train_target = torch.tensor(train_target, dtype=torch.float)
 
-eval_feats = []
-eval_targets = []
+eval_ids = eval_df[1].to_list() # For later
+eval_feat = eval_df.drop(columns=[0,1,
+    'final']).astype('float64').to_numpy()
+eval_feat = np.concatenate((eval_feat[:,[0]], normalizing_func(eval_feat[:,1:])), axis=1)
+eval_feat = torch.tensor(eval_feat, dtype=torch.float)
 
-for eval_df in eval_dfs:
-    eval_feat = eval_df.drop(columns=[0,1,
-        'final']).astype('float64').to_numpy()
-    eval_target = eval_df['final'].astype('float64').to_numpy()
-
-    eval_feat = np.concatenate((eval_feat[:,[0]], normalizing_func(eval_feat[:,1:])), axis=1)
-
-    eval_feat = torch.tensor(eval_feat, dtype=torch.float)
-    
-    eval_feats.append(eval_feat)
-    eval_targets.append(eval_target)
-    #eval_target = torch.tensor(eval_target, dtype=torch.float)
 
 model = CacheNet(p=0.5)
 criterion = torch.nn.MSELoss()
@@ -256,12 +218,12 @@ scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 #train_feat = torch.randn(len(train_target), 34)
 
 model.train()
-""" print(train_target)
+print(train_target)
 
 vtimes = train_feat[:, 0].numpy()
-avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes]) """
+avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes])
 
-""" for t in range(400):
+for t in range(300):
     # Forward Pass
     y_pred = model(train_feat)
     y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
@@ -277,67 +239,97 @@ avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes]) """
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    scheduler.step() """
+    scheduler.step()
 
 # Evaluation of Model
 with torch.no_grad():
 
     model.eval()
     # Training Score
-    """ y_pred = model(train_feat)
+    y_pred = model(train_feat)
     y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
     print('Training Score:')
     print(criterion(y_pred, train_target))
-    print(y_pred) """
-    
-    num_evicted = 5
-    model_predictions = []
-    rec_predictions = []
-
-    for i in range(len(eval_feats)):
-        #y_pred = model(eval_feats[i])
-        #pred_lst = y_pred.numpy().flatten()
-        #pred_lst += eval_feats[i][:,0].numpy() # add the vtimes in
-
-        # Gives indices for the num_evicted items that will be evicted by model
-        #pred_evict_inds = np.argsort(pred_lst)[-1*num_evicted:]
-
-        # Gives indices for the num_evicted items that will be evicted by pure recency
-        rec_evict_inds = np.argsort(eval_feats[i][:,0].numpy())[:num_evicted]
-        print("\t".join(["%7d" % z for z in eval_feats[i][:,0].numpy()]))
-        print(rec_evict_inds)
-        # Actual times for model evicted items
-        #actual_times_model = [eval_targets[i][index] for index in pred_evict_inds]
-
-        # Actual times for recency evicted items
-        actual_times_rec = [eval_targets[i][index] for index in rec_evict_inds]
-        print(actual_times_rec)
-        # Create a dict for actual time -> index in sorted list (lower is better)
-        sorted_times = eval_targets[i].tolist()
-        sorted_times.sort(reverse=True)
-        print(sorted_times)
-        time_dict = {}
-        for index, tm in enumerate(sorted_times):
-            time_dict[tm] = index
-
-        # Get the ranks for the evicted items by model
-        #curr_pred_model = [time_dict[tm] for tm in actual_times_model]
-
-        # Get the ranks for the evicted items by recency
-        curr_pred_rec = [time_dict[tm] for tm in actual_times_rec]
-        print(curr_pred_rec)
-        #model_predictions.append(np.mean(curr_pred_model))
-        rec_predictions.append(np.mean(curr_pred_rec))
-        #print(predictions)
+    print(y_pred)  
 
     t2 = time.time()
-    print('Time to Train:')
-    print(str(t2-t1))
+    print('Time to Train: ', str(t2-t1))
 
-    """ plt.figure(0)
-    plt.scatter(times, model_predictions, s=4.0, c='g', edgecolors='none')
-    plt.scatter(times, rec_predictions, s=4.0, c='b', edgecolors='none')
-    plt.savefig('eval/' + file_name + '_' + sys.argv[2] + '_' + str(time.time()) + '.png')
-    plt.close() """
+    # LRU/Opt comparison setup
+    c = Cachecow()
+    c.open('temp_trace_' + file_name + '.txt')
 
+    max_cache_size = 40000
+    if len(sys.argv) > 4:
+        max_cache_size = int(sys.argv[4])
+
+    opt_hr_dict = c.get_hit_ratio_dict('Optimal', cache_size=max_cache_size)
+    lru_hr_dict = c.get_hit_ratio_dict('LRU', cache_size=max_cache_size)
+    rand_hr_dict = c.get_hit_ratio_dict('Random', cache_size=max_cache_size)
+
+    # Manually get hit ratios for ml model...
+    eval_values = model(eval_feat)
+    eval_values = [eval_values[i, 0] for i in range(len(eval_values))]
+
+    length = len(eval_values)
+    cache_size_factor = 2
+    cache_sizes = [int(cache_size_factor**i) for i in range(int(np.log(max_cache_size)/
+        np.log(cache_size_factor)) + 1)] + [max_cache_size]
+    hit_ratios = []
+    
+    for cache_size in cache_sizes:
+        pq = heapdict()
+        n_hits = 0
+        print(cache_size)
+        for ts, ident in enumerate(eval_ids):
+            if ident in pq:
+                n_hits += 1
+                pq[ident] = -ts - eval_values[ts] # update the value
+            else:
+                pq[ident] = -ts - eval_values[ts] # add to cache
+                if len(pq) > cache_size:
+                    pq.popitem()
+
+        hit_ratios.append(n_hits / length)    
+
+    t3 = time.time()
+    print('Time to Evaluate: ', str(t3-t2))
+    #print(hit_ratios[:5])
+    #print(hit_ratios[-5:])
+
+    '''
+    Plotting
+    '''
+
+    ml_x = cache_sizes
+
+    # Inefficient but oh well
+    opt_x = list(opt_hr_dict.keys())
+    opt_x.sort()
+    opt_hrs = list(opt_hr_dict.values())
+    opt_hrs.sort()
+    lru_x = list(lru_hr_dict.keys())
+    lru_x.sort()
+    lru_hrs = list(lru_hr_dict.values())
+    lru_hrs.sort()
+    rand_x = list(rand_hr_dict.keys())
+    rand_x.sort()
+    rand_hrs = list(rand_hr_dict.values())
+    rand_hrs.sort()
+
+    plt.figure(0)
+
+    opt_curve, = plt.plot(opt_x, opt_hrs, 'r-')
+    lru_curve, = plt.plot(lru_x, lru_hrs, 'g-')
+    rand_curve, = plt.plot(rand_x, rand_hrs, 'k-')
+    ml_curve, = plt.plot(ml_x, hit_ratios, 'b-')
+
+
+    plt.xlabel('Cache Size')
+    plt.ylabel('Hit Ratio')
+    plt.legend((opt_curve, lru_curve, rand_curve, ml_curve), ('Optimal', 'LRU',
+        "Random", '\"SmarterCache\"'), loc='lower right', markerscale=1.0)
+    plt.savefig('eval/hrc/' + file_name + '_' + str(time.time()) + '.png')
+    plt.close()
+    
 
