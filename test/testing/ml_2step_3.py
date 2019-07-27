@@ -111,30 +111,34 @@ def get_next_access_dist(id_ser):
 
 def create_dist_df(feature_df, samples, dists, start_time, eval=False):
 
-    # Returns logistic virtual distance (sigmoid)
-    def get_logit_dist(next_access_dist, timestamp):
+    # Returns logistic virtual distance since t_now (sigmoid)
+    def get_logit_dist(next_access_dist, timestamp, delta):
 
         if next_access_dist != -1:
-            return 1/(1 + np.exp(-(next_access_dist - avg_fut_rd(timestamp))/damp_factor))
+            return 1/(1 + np.exp(-(next_access_dist - delta
+                 - avg_fut_rd(timestamp))/damp_factor))
         else: # return 1
             return 1
 
     
     train_data = []
     for t in samples:
+        delta = 0
         if not eval:
-            logit_dist_val = get_logit_dist(dists[t], t)
-        else:
-            logit_dist_val = 0 # dummy value
+            delta = int(random.random() * dists[t])
         
-        delta = feature_df.shape[0] - t + start_time
+        if delta + t < len(feature_df) + start_time:
+            if not eval:
+                logit_dist_val = get_logit_dist(dists[t], t, delta)
+            else:
+                logit_dist_val = 0 # dummy value
 
-        ser = feature_df.loc[t].to_list()
-        for i in range(3,8):
-            if ser[i] == 0:
-                ser[i] = med_q3*20
-        ser += [delta] + [logit_dist_val]
-        train_data.append(ser)
+            ser = feature_df.loc[t].to_list()
+            for i in range(3,8):
+                if ser[i] == 0:
+                    ser[i] = med_q3*20
+            ser += [delta] + [logit_dist_val]
+            train_data.append(ser)
 
     full_df = pd.DataFrame(data=train_data,
         columns=(list(range(N_FEATURES)) + ['final']))
@@ -205,8 +209,8 @@ train_target = torch.tensor(train_target, dtype=torch.float)
 eval_ids = eval_df[1].to_list() # For later
 eval_feat = eval_df.drop(columns=[0,1,
     'final']).astype('float64').to_numpy()
-eval_feat = np.concatenate((eval_feat[:,[0]], normalizing_func(eval_feat[:,1:])), axis=1)
-eval_feat = torch.tensor(eval_feat, dtype=torch.float)
+#eval_feat = np.concatenate((eval_feat[:,[0]], normalizing_func(eval_feat[:,1:])), axis=1)
+#eval_feat = torch.tensor(eval_feat, dtype=torch.float)
 
 
 model = CacheNet(p=0.5)
@@ -267,28 +271,62 @@ with torch.no_grad():
     lru_hr_dict = c.get_hit_ratio_dict('LRU', cache_size=max_cache_size)
     rand_hr_dict = c.get_hit_ratio_dict('Random', cache_size=max_cache_size)
 
-    # Manually get hit ratios for ml model...
-    eval_values = model(eval_feat)
-    eval_values = [eval_values[i, 0] for i in range(len(eval_values))]
+    def eviction_process(cache_dict, sample_size, n_evicts, ts):
+        # Ensure that at least one element is evicted
+        if sample_size == 0:
+            sample_size = 1
+        if n_evicts == 0:
+            n_evicts = 1
+        
+        # Randomly sample the cache for eviction candidates
+        reqs = random.sample(cache_dict.items(), sample_size)
+        id_lst = [req[0] for req in reqs]
+        eval_features = np.zeros((sample_size, 18), dtype='float64')
 
-    length = len(eval_values)
-    cache_size_factor = 2
+        for i, (ident, ind) in enumerate(reqs):
+            eval_i = eval_feat[[ind]]
+            eval_i[0, -1] = ts - cache_dict[ident] # changing the delta value
+            eval_features[i] = eval_i
+        
+        # Run Model
+        eval_features = torch.Tensor(normalizing_func(eval_features))
+        eval_values = model(eval_features)
+        eval_values = [eval_values[i, 0] for i in range(len(eval_values))]
+
+        # Get indices for eviction candidates
+        evict_inds = np.argsort(np.negative(eval_values))[:n_evicts]
+        
+        # Do deletions
+        for ind in evict_inds:
+            del cache_dict[id_lst[ind]]
+
+
+
+    # Manually get hit ratios for ml model...
+    """ eval_values = model(eval_feat)
+    eval_values = [eval_values[i, 0] for i in range(len(eval_values))] """
+
+    length = len(eval_ids)
+    cache_size_factor = 1.5
     cache_sizes = [int(cache_size_factor**i) for i in range(int(np.log(max_cache_size)/
         np.log(cache_size_factor)) + 1)] + [max_cache_size]
     hit_ratios = []
     
     for cache_size in cache_sizes:
-        pq = heapdict()
+        cache = {}
         n_hits = 0
         print(cache_size)
         for ts, ident in enumerate(eval_ids):
-            if ident in pq:
+            if ident in cache:
                 n_hits += 1
-                pq[ident] = -ts - eval_values[ts] # update the value
+                cache[ident] = ts # update cache
             else:
-                pq[ident] = -ts - eval_values[ts] # add to cache
-                if len(pq) > cache_size:
-                    pq.popitem()
+                cache[ident] = ts # add to cache
+                if len(cache) > cache_size:
+                    # Eviction Process
+                    eviction_process(cache, int(cache_size/200), int(cache_size/4000), ts)
+
+
 
         hit_ratios.append(n_hits / length)    
 
