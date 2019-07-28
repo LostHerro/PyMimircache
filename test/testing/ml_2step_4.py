@@ -21,29 +21,14 @@ Initial Stuff
 '''
 
 file_name = sys.argv[1]
-if sys.argv[2] == 'med':
-    num = '1'
-elif sys.argv[2] == 'q3':
-    num = '2'
-q3_fut_rd_arr = pd.read_csv('fut_rd_stats/' + file_name + '_5000.csv')[num].to_numpy()
-
-mode = sys.argv[3] # "perfect", "break", or "none"
 
 train_factor = random.uniform(0.6, 0.7)
 
-med_q3 = np.median(q3_fut_rd_arr[:int(train_factor*len(q3_fut_rd_arr))])
+med_q3 = int(sys.argv[2])
 damp_factor = med_q3 / 1.5
 
-def avg_fut_rd(vtime, mode=mode):
-    if mode == 'none':
-        return med_q3
-    elif mode == 'perfect':
-        return q3_fut_rd_arr[int(vtime / 50)]
-    elif mode == 'break':
-        if int(vtime / 50) > int(train_factor*len(q3_fut_rd_arr)):
-            return med_q3
-        else:
-            return q3_fut_rd_arr[int(vtime / 50)]
+def avg_fut_rd(vtime):
+    return med_q3
     
 
 
@@ -89,7 +74,7 @@ Data Processing Section
 '''
 N_FEATURES = 20 #???? idk
 
-def get_next_access_dist(id_ser):
+def get_next_access_dist(id_ser, dummy_length):
 
     reverse_data = deque()
     next_access_dist = []
@@ -102,7 +87,7 @@ def get_next_access_dist(id_ser):
         if req in next_access_time:
             next_access_dist.append(index - next_access_time[req])
         else:
-            next_access_dist.append(len(q3_fut_rd_arr) * 50)
+            next_access_dist.append(dummy_length)
         next_access_time[req] = index
     
     next_access_dist.reverse()
@@ -156,7 +141,7 @@ def gen_train_eval_data(df):
 
     time_samples = np.random.randint(0, int(train_factor * df_len), size=n_samples)
     learn_data = df.iloc[:int(train_factor * df_len)]
-    train_dists = get_next_access_dist(learn_data['id'])
+    train_dists = get_next_access_dist(learn_data['id'], df_len)
     
     train_df = create_dist_df(learn_data, time_samples, train_dists, 0)
 
@@ -165,7 +150,7 @@ def gen_train_eval_data(df):
 
     time_samples = list(range(int(train_factor * df_len), df_len))
     eval_data = df.iloc[int(train_factor * df_len):]
-    eval_dists = get_next_access_dist(eval_data['id'])
+    eval_dists = get_next_access_dist(eval_data['id'], df_len)
 
     eval_df = create_dist_df(eval_data, time_samples, eval_dists, int(train_factor * df_len), eval=True)
 
@@ -264,8 +249,8 @@ with torch.no_grad():
     c.open('temp_trace_' + file_name + '.txt')
 
     max_cache_size = 40000
-    if len(sys.argv) > 4:
-        max_cache_size = int(sys.argv[4])
+    if len(sys.argv) > 3:
+        max_cache_size = int(sys.argv[3])
 
     opt_hr_dict = c.get_hit_ratio_dict('Optimal', cache_size=max_cache_size)
     lru_hr_dict = c.get_hit_ratio_dict('LRU', cache_size=max_cache_size)
@@ -324,7 +309,7 @@ with torch.no_grad():
                 cache[ident] = ts # add to cache
                 if len(cache) > cache_size:
                     # Eviction Process
-                    eviction_process(cache, int(cache_size/20), int(cache_size/400), ts)
+                    eviction_process(cache, int(cache_size/200), int(cache_size/4000), ts)
 
 
 

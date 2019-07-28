@@ -324,7 +324,7 @@ with torch.no_grad():
                 cache[ident] = ts # add to cache
                 if len(cache) > cache_size:
                     # Eviction Process
-                    eviction_process(cache, int(cache_size/20), int(cache_size/400), ts)
+                    eviction_process(cache, int(cache_size/200), int(cache_size/4000), ts)
 
 
 
