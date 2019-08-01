@@ -284,7 +284,7 @@ with torch.no_grad():
         eval_features = np.zeros((sample_size, 18), dtype='float64')
 
         for i, (ident, ind) in enumerate(reqs):
-            eval_i = eval_feat[[ind]]
+            eval_i = eval_feat[ind]
             eval_i[0, -1] = ts - cache_dict[ident] # changing the delta value
             eval_features[i] = eval_i
         

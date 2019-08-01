@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import random, math, time, sys
+import random, math, time, sys, heapq
 
 from collections import deque
 from PyMimircache import Cachecow
@@ -256,6 +256,17 @@ with torch.no_grad():
     lru_hr_dict = c.get_hit_ratio_dict('LRU', cache_size=max_cache_size)
     rand_hr_dict = c.get_hit_ratio_dict('Random', cache_size=max_cache_size)
 
+    def select_indices(eval_lst, n):
+        ret = heapdict()
+        curr_min = min(eval_lst[:5])
+        for i, fut_dist in enumerate(eval_lst):
+            if fut_dist > curr_min:
+                ret[i] = fut_dist
+                if len(ret) > n:
+                    ret.popitem()
+                curr_min = ret.peekitem()[1]
+        return list(ret.values())
+
     def eviction_process(cache_dict, sample_size, n_evicts, ts):
         # Ensure that at least one element is evicted
         if sample_size == 0:
@@ -269,8 +280,8 @@ with torch.no_grad():
         eval_features = np.zeros((sample_size, 18), dtype='float64')
 
         for i, (ident, ind) in enumerate(reqs):
-            eval_i = eval_feat[[ind]]
-            eval_i[0, -1] = ts - cache_dict[ident] # changing the delta value
+            eval_i = eval_feat[ind]
+            eval_i[-1] = ts - cache_dict[ident] # changing the delta value
             eval_features[i] = eval_i
         
         # Run Model
@@ -279,7 +290,7 @@ with torch.no_grad():
         eval_values = [eval_values[i, 0] for i in range(len(eval_values))]
 
         # Get indices for eviction candidates
-        evict_inds = np.argsort(np.negative(eval_values))[:n_evicts]
+        evict_inds = select_indices(eval_values, n_evicts)
         
         # Do deletions
         for ind in evict_inds:
