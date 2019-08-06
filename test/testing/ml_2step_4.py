@@ -35,7 +35,7 @@ def avg_fut_rd(vtime):
 # TODO: Implement the vtime of the request; probably use the head of each feature vector?
 class CacheNet(nn.Module):
 
-    N_TRUE_FEATURES = 17
+    N_TRUE_FEATURES = 14
 
     def __init__(self, p=0.0):
         super(CacheNet, self).__init__()
@@ -45,15 +45,15 @@ class CacheNet(nn.Module):
         #self.h1_drop = nn.Dropout(p=p)
         #self.h2_layer = nn.Linear(64,40)
         #self.h2_drop = nn.Dropout(p=p)
-        self.h3_layer = nn.Linear(64,16)
+        self.h3_layer = nn.Linear(64,32)
         self.h3_drop = nn.Dropout(p=p)
-        self.h4_layer = nn.Linear(16,4)
+        self.h4_layer = nn.Linear(32,10)
         self.h4_drop = nn.Dropout(p=p)
-        self.out_layer = nn.Linear(4, 1)
+        self.out_layer = nn.Linear(10,1)
 
     # Head of feature vector is the virtual time (column 0)
     def forward(self, inputs):
-        inputs = inputs[:, 1:]
+        #inputs = inputs[:, 1:]
         inputs = self.in_layer(inputs)
         #inputs = F.relu(self.h1_layer(inputs))
         #inputs = self.h1_drop(inputs)
@@ -72,7 +72,7 @@ class CacheNet(nn.Module):
 '''
 Data Processing Section
 '''
-N_FEATURES = 20 #???? idk
+N_FEATURES = 19 #???? idk
 
 def get_next_access_dist(id_ser, dummy_length):
 
@@ -134,10 +134,10 @@ def gen_train_eval_data(df):
 
     df = df.iloc[int(0.05*df.shape[0]):int(0.95*df.shape[0])].reset_index(drop=True)
     df_len = df.shape[0]
-    df.insert(loc=2, column='vtime', value=df.index)
+    #df.insert(loc=2, column='vtime', value=df.index)
     
     tc = time.time()
-    n_samples = 500000
+    n_samples = max(500000, int(df_len * train_factor/5))
 
     time_samples = np.random.randint(0, int(train_factor * df_len), size=n_samples)
     learn_data = df.iloc[:int(train_factor * df_len)]
@@ -182,17 +182,17 @@ def normalizing_func(x):
 #print(train_df)
 #print(eval_df)
 
-train_feat = train_df.drop(columns=[0,1,
+train_feat = train_df.drop(columns=[0,1,2,3,4,
     'final']).astype('float64').to_numpy()
 train_target = train_df[['final']].astype('float64').to_numpy()
 
-train_feat = np.concatenate((train_feat[:,[0]], normalizing_func(train_feat[:,1:])), axis=1)
+train_feat = normalizing_func(train_feat)
 
 train_feat = torch.tensor(train_feat, dtype=torch.float)
 train_target = torch.tensor(train_target, dtype=torch.float)
 
 eval_ids = eval_df[1].to_list() # For later
-eval_feat = eval_df.drop(columns=[0,1,
+eval_feat = eval_df.drop(columns=[0,1,2,3,4,
     'final']).astype('float64').to_numpy()
 #eval_feat = np.concatenate((eval_feat[:,[0]], normalizing_func(eval_feat[:,1:])), axis=1)
 #eval_feat = torch.tensor(eval_feat, dtype=torch.float)
@@ -209,13 +209,10 @@ scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 model.train()
 print(train_target)
 
-vtimes = train_feat[:, 0].numpy()
-avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes])
-
 for t in range(300):
     # Forward Pass
     y_pred = model(train_feat)
-    y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
+    y_pred = torch.sigmoid((y_pred - med_q3)/damp_factor)
 
     # Loss
     loss = criterion(y_pred, train_target)
@@ -236,7 +233,7 @@ with torch.no_grad():
     model.eval()
     # Training Score
     y_pred = model(train_feat)
-    y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
+    y_pred = torch.sigmoid((y_pred - med_q3)/damp_factor)
     print('Training Score:')
     print(criterion(y_pred, train_target))
     print(y_pred)  
@@ -258,14 +255,14 @@ with torch.no_grad():
 
     def select_indices(eval_lst, n):
         ret = heapdict()
-        curr_min = min(eval_lst[:5])
+        curr_min = float('-inf')
         for i, fut_dist in enumerate(eval_lst):
-            if fut_dist > curr_min:
+            if fut_dist > curr_min or len(ret) < n:
                 ret[i] = fut_dist
                 if len(ret) > n:
                     ret.popitem()
                 curr_min = ret.peekitem()[1]
-        return list(ret.values())
+        return list(ret.keys())
 
     def eviction_process(cache_dict, sample_size, n_evicts, ts):
         # Ensure that at least one element is evicted
@@ -277,7 +274,7 @@ with torch.no_grad():
         # Randomly sample the cache for eviction candidates
         reqs = random.sample(cache_dict.items(), sample_size)
         id_lst = [req[0] for req in reqs]
-        eval_features = np.zeros((sample_size, 18), dtype='float64')
+        eval_features = np.zeros((sample_size, 14), dtype='float64')
 
         for i, (ident, ind) in enumerate(reqs):
             eval_i = eval_feat[ind]
@@ -291,6 +288,7 @@ with torch.no_grad():
 
         # Get indices for eviction candidates
         evict_inds = select_indices(eval_values, n_evicts)
+        #evict_inds = np.argsort(eval_values)[-1*n_evicts:] # why the hell is this faster..
         
         # Do deletions
         for ind in evict_inds:

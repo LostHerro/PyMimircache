@@ -7,13 +7,14 @@ import torch.optim as optim
 import random, math, time, sys
 
 from collections import deque
-from PyMimircache import Cachecow
+#from PyMimircache import Cachecow
 from heapdict import heapdict
 from shap import DeepExplainer
+from sklearn.decomposition import PCA
 
-import matplotlib
-matplotlib.use('agg')
-import matplotlib.pyplot as plt
+#import matplotlib
+#matplotlib.use('agg')
+#import matplotlib.pyplot as plt
 
 
 
@@ -36,7 +37,7 @@ def avg_fut_rd(vtime):
 # TODO: Implement the vtime of the request; probably use the head of each feature vector?
 class CacheNet(nn.Module):
 
-    N_TRUE_FEATURES = 17
+    N_TRUE_FEATURES = 14
 
     def __init__(self, p=0.0):
         super(CacheNet, self).__init__()
@@ -46,15 +47,15 @@ class CacheNet(nn.Module):
         #self.h1_drop = nn.Dropout(p=p)
         #self.h2_layer = nn.Linear(64,40)
         #self.h2_drop = nn.Dropout(p=p)
-        self.h3_layer = nn.Linear(64,16)
+        self.h3_layer = nn.Linear(64,32)
         self.h3_drop = nn.Dropout(p=p)
-        self.h4_layer = nn.Linear(16,4)
+        self.h4_layer = nn.Linear(32,10)
         self.h4_drop = nn.Dropout(p=p)
-        self.out_layer = nn.Linear(4, 1)
+        self.out_layer = nn.Linear(10,1)
 
     # Head of feature vector is the virtual time (column 0)
     def forward(self, inputs):
-        inputs = inputs[:, 1:]
+        #inputs = inputs[:, 1:]
         inputs = self.in_layer(inputs)
         #inputs = F.relu(self.h1_layer(inputs))
         #inputs = self.h1_drop(inputs)
@@ -73,7 +74,7 @@ class CacheNet(nn.Module):
 '''
 Data Processing Section
 '''
-N_FEATURES = 20 #???? idk
+N_FEATURES = 19 #???? idk
 
 def get_next_access_dist(id_ser, dummy_length):
 
@@ -109,9 +110,8 @@ def create_dist_df(feature_df, samples, dists, start_time, eval=False):
     
     train_data = []
     for t in samples:
-        delta = 0
-        if not eval:
-            delta = int(random.random() * dists[t])
+        
+        delta = int(random.random() * dists[t - start_time])
         
         if delta + t < len(feature_df) + start_time:
             if not eval:
@@ -135,10 +135,10 @@ def gen_train_eval_data(df):
 
     df = df.iloc[int(0.05*df.shape[0]):int(0.95*df.shape[0])].reset_index(drop=True)
     df_len = df.shape[0]
-    df.insert(loc=2, column='vtime', value=df.index)
+    #df.insert(loc=2, column='vtime', value=df.index)
     
     tc = time.time()
-    n_samples = 500000
+    n_samples = max(500000, int(df_len * train_factor/5))
 
     time_samples = np.random.randint(0, int(train_factor * df_len), size=n_samples)
     learn_data = df.iloc[:int(train_factor * df_len)]
@@ -174,24 +174,29 @@ def normalizing_func(x):
         if stdev[i] != 0:
             ret[:, i] = (x[:, i] - np.mean(x[:, i]))/stdev[i]
     return ret
-#print(train_df)
-#print(eval_df)
 
-train_feat = train_df.drop(columns=[0,1,
+train_feat = train_df.drop(columns=[0,1,2,3,4,
     'final']).astype('float64').to_numpy()
 train_target = train_df[['final']].astype('float64').to_numpy()
 
-train_feat = np.concatenate((train_feat[:,[0]], normalizing_func(train_feat[:,1:])), axis=1)
+train_feat = normalizing_func(train_feat)
 
 train_feat = torch.tensor(train_feat, dtype=torch.float)
 train_target = torch.tensor(train_target, dtype=torch.float)
 
 eval_ids = eval_df[1].to_list() # For later
-eval_feat = eval_df.drop(columns=[0,1,
+eval_feat = eval_df.drop(columns=[0,1,2,3,4,
     'final']).astype('float64').to_numpy()
-#eval_feat = np.concatenate((eval_feat[:,[0]], normalizing_func(eval_feat[:,1:])), axis=1)
-#eval_feat = torch.tensor(eval_feat, dtype=torch.float)
+eval_feat = normalizing_func(eval_feat)
+eval_feat = torch.tensor(eval_feat, dtype=torch.float)
 
+if len(sys.argv) > 3 and sys.argv[3] == 'pca':
+    pca = PCA()
+    pca.fit(train_feat.numpy())
+    variances = pca.explained_variance_ratio_
+    ser = pd.Series(variances)
+    ser.to_csv('eval/' + file_name + '_pca.csv')
+    exit()
 
 model = CacheNet(p=0.5)
 criterion = torch.nn.MSELoss()
@@ -204,13 +209,10 @@ scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 model.train()
 print(train_target)
 
-vtimes = train_feat[:, 0].numpy()
-avg_rds = torch.Tensor([[avg_fut_rd(t)] for t in vtimes])
-
 for t in range(300):
     # Forward Pass
     y_pred = model(train_feat)
-    y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
+    y_pred = torch.sigmoid((y_pred - med_q3)/damp_factor)
 
     # Loss
     loss = criterion(y_pred, train_target)
@@ -231,7 +233,7 @@ with torch.no_grad():
     model.eval()
     # Training Score
     y_pred = model(train_feat)
-    y_pred = torch.sigmoid((y_pred - avg_rds)/damp_factor)
+    y_pred = torch.sigmoid((y_pred - med_q3)/damp_factor)
     print('Training Score:')
     print(criterion(y_pred, train_target))
     print(y_pred)  
@@ -239,67 +241,51 @@ with torch.no_grad():
     t2 = time.time()
     print('Time to Train: ', str(t2-t1))
 
-    analysis_size = 40000
-    if len(sys.argv) > 3:
-        analysis_size = int(sys.argv[3])
+background_size = 10000
+n_analyses = 50
 
-    def select_indices(eval_lst, n):
-        ret = heapdict()
-        curr_min = min(eval_lst[:5])
-        for i, fut_dist in enumerate(eval_lst):
-            if fut_dist > curr_min:
-                ret[i] = fut_dist
-                if len(ret) > n:
-                    ret.popitem()
-                curr_min = ret.peekitem()[1]
-        return list(ret.values())
+background = train_feat[np.random.randint(0, len(train_feat),
+    size=background_size)]
+exp = DeepExplainer(model, background)
 
-    def eviction_process(cache_dict, sample_size, n_evicts, ts):
-        # Ensure that at least one element is evicted
-        if sample_size == 0:
-            sample_size = 1
-        if n_evicts == 0:
-            n_evicts = 1
-        
-        # Randomly sample the cache for eviction candidates
-        reqs = random.sample(cache_dict.items(), sample_size)
-        id_lst = [req[0] for req in reqs]
-        eval_features = np.zeros((sample_size, 18), dtype='float64')
+analyses = eval_feat[np.random.randint(0, len(eval_feat),
+    size=n_analyses)]
+shap_values = exp.shap_values(analyses)
 
-        for i, (ident, ind) in enumerate(reqs):
-            eval_i = eval_feat[ind]
-            eval_i[-1] = ts - cache_dict[ident] # changing the delta value
-            eval_features[i] = eval_i
-        
-        # Run Model
-        eval_features = torch.Tensor(normalizing_func(eval_features))
-        eval_values = model(eval_features)
-        eval_values = [eval_values[i, 0] for i in range(len(eval_values))]
+df = pd.DataFrame(shap_values,
+    columns=['d_1', 'd_2', 'd_3', 'd_4', 'd_5', 'f_64', 'f_256', 'f_1024',
+    'f_4096', 'f_16384', 'r_64', 'r_256', 'r_1024', 'delta'])
 
-        # Get indices for eviction candidates
-        evict_inds = np.argsort(np.negative(eval_values))[:n_evicts]
-        
-        # Do deletions
-        for ind in evict_inds:
-            del cache_dict[id_lst[ind]]
+mins = []
+maxes = []
+means = []
+meds = []
+stddevs = []
+q1s = []
+q3s = []
 
-    cache = {}
-    n_hits = 0
-    for ts, ident in enumerate(eval_ids):
-        if ident in cache:
-            n_hits += 1
-            cache[ident] = ts # update cache
-        else:
-            cache[ident] = ts # add to cache
-            if len(cache) > analysis_size:
-                # Eviction Process
-                eviction_process(cache, int(analysis_size/200), int(analysis_size/4000), ts)
+for i, col in df.iteritems():
+    shap_vals = col.to_numpy()
+    mins.append(min(shap_vals))
+    maxes.append(max(shap_vals))
+    means.append(np.mean(shap_vals))
+    meds.append(np.median(shap_vals))
+    stddevs.append(np.std(shap_vals))
+    q1s.append(np.percentile(shap_vals, 25.0))
+    q3s.append(np.percentile(shap_vals, 75.0))
 
-  
+df.loc['min'] = mins
+df.loc['max'] = maxes
+df.loc['mean'] = means
+df.loc['median'] = meds
+df.loc['std dev'] = stddevs
+df.loc['P25'] = q1s
+df.loc['P75'] = q3s
 
-    t3 = time.time()
-    print('Time to Evaluate: ', str(t3-t2))
-    #print(hit_ratios[:5])
-    #print(hit_ratios[-5:])
+df.to_csv('eval/shap/' + file_name + '_shap_results.csv')
+
+t3 = time.time()
+print('Time to Evaluate SHAP: ', str(t3-t2))
+
     
 
