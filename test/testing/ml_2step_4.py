@@ -252,6 +252,8 @@ with torch.no_grad():
     opt_hr_dict = c.get_hit_ratio_dict('Optimal', cache_size=max_cache_size)
     lru_hr_dict = c.get_hit_ratio_dict('LRU', cache_size=max_cache_size)
     rand_hr_dict = c.get_hit_ratio_dict('Random', cache_size=max_cache_size)
+    lfu_hr_dict = c.get_hit_ratio_dict('LFU', cache_size=max_cache_size)
+    arc_hr_dict = c.get_hit_ratio_dict('ARC', cache_size=max_cache_size)
 
     def select_indices(eval_lst, n):
         ret = heapdict()
@@ -318,7 +320,7 @@ with torch.no_grad():
                 cache[ident] = ts # add to cache
                 if len(cache) > cache_size:
                     # Eviction Process
-                    eviction_process(cache, int(cache_size/200), int(cache_size/4000), ts)
+                    eviction_process(cache, int(cache_size/50), int(cache_size/1000), ts)
 
 
 
@@ -348,19 +350,30 @@ with torch.no_grad():
     rand_x.sort()
     rand_hrs = list(rand_hr_dict.values())
     rand_hrs.sort()
+    lfu_x = list(lfu_hr_dict.keys())
+    lfu_x.sort()
+    lfu_hrs = list(lfu_hr_dict.values())
+    lfu_hrs.sort()
+    arc_x = list(arc_hr_dict.keys())
+    arc_x.sort()
+    arc_hrs = list(arc_hr_dict.values())
+    arc_hrs.sort()
 
     plt.figure(0)
 
     opt_curve, = plt.plot(opt_x, opt_hrs, 'r-')
     lru_curve, = plt.plot(lru_x, lru_hrs, 'g-')
     rand_curve, = plt.plot(rand_x, rand_hrs, 'k-')
+    lfu_curve, = plt.plot(lfu_x, lfu_hrs, 'm-')
+    arc_curve, = plt.plot(arc_x, arc_hrs, 'c-')
     ml_curve, = plt.plot(ml_x, hit_ratios, 'b-')
+    
 
 
     plt.xlabel('Cache Size')
     plt.ylabel('Hit Ratio')
-    plt.legend((opt_curve, lru_curve, rand_curve, ml_curve), ('Optimal', 'LRU',
-        "Random", '\"SmarterCache\"'), loc='lower right', markerscale=1.0)
+    plt.legend((opt_curve, lru_curve, rand_curve, lfu_curve, arc_curve, ml_curve), ('Optimal', 'LRU',
+        "Random", 'LFU', 'ARC', '\"SmarterCache\"'), loc='lower right', markerscale=1.0)
     plt.savefig('eval/hrc/' + file_name + '_' + str(time.time()) + '.png')
     plt.close()
     

@@ -6,15 +6,16 @@ import torch.nn.functional as F
 import torch.optim as optim
 import random, math, time, sys
 
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+
 from collections import deque
 #from PyMimircache import Cachecow
 from heapdict import heapdict
 from shap import DeepExplainer
 from sklearn.decomposition import PCA
-
-#import matplotlib
-#matplotlib.use('agg')
-#import matplotlib.pyplot as plt
+from shap import summary_plot
 
 
 
@@ -242,7 +243,7 @@ with torch.no_grad():
     print('Time to Train: ', str(t2-t1))
 
 background_size = 10000
-n_analyses = 50
+n_analyses = 250
 
 background = train_feat[np.random.randint(0, len(train_feat),
     size=background_size)]
@@ -263,6 +264,8 @@ meds = []
 stddevs = []
 q1s = []
 q3s = []
+
+#print('shap -> stats')
 
 for i, col in df.iteritems():
     shap_vals = col.to_numpy()
@@ -286,6 +289,17 @@ df.to_csv('eval/shap/' + file_name + '_shap_results.csv')
 
 t3 = time.time()
 print('Time to Evaluate SHAP: ', str(t3-t2))
+
+if len(sys.argv) > 3 and sys.argv[3] == 'vis':
+    shap_df = df[:n_analyses]
+    col_names = shap_df.columns
+    shap_values = shap_df.to_numpy().astype('float64')
+    
+    summary_plot(shap_values, features=analyses.numpy(), feature_names=col_names)
+
+    plt.savefig('eval/shap/' + file_name + '_IMG.png')
+    plt.xscale('symlog')
+    plt.savefig('eval/shap/' + file_name + '_IMG_log.png')
 
     
 
