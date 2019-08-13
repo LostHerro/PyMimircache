@@ -112,7 +112,8 @@ def create_dist_df(feature_df, samples, dists, start_time, eval=False):
     train_data = []
     for t in samples:
         
-        delta = int(random.random() * dists[t - start_time])
+        #delta = int(random.random() * dists[t - start_time])
+        delta = int(random.random()**2 * dists[t - start_time])
         
         if delta + t < len(feature_df) + start_time:
             if not eval:
@@ -121,7 +122,7 @@ def create_dist_df(feature_df, samples, dists, start_time, eval=False):
                 logit_dist_val = 0 # dummy value
 
             ser = feature_df.loc[t].to_list()
-            for i in range(3,8):
+            for i in range(5,10):
                 if ser[i] == 0:
                     ser[i] = med_q3*20
             ser += [delta] + [logit_dist_val]
@@ -201,16 +202,16 @@ if len(sys.argv) > 3 and sys.argv[3] == 'pca':
 
 model = CacheNet(p=0.5)
 criterion = torch.nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.05)
+optimizer = optim.Adam(model.parameters(), lr=0.04)
 
-lambda1 = lambda epoch: 0.995
+lambda1 = lambda epoch: 0.99
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 #train_feat = torch.randn(len(train_target), 34)
 
 model.train()
 print(train_target)
 
-for t in range(300):
+for t in range(400):
     # Forward Pass
     y_pred = model(train_feat)
     y_pred = torch.sigmoid((y_pred - med_q3)/damp_factor)
@@ -297,9 +298,13 @@ if len(sys.argv) > 3 and sys.argv[3] == 'vis':
     
     summary_plot(shap_values, features=analyses.numpy(), feature_names=col_names)
 
-    plt.savefig('eval/shap/' + file_name + '_IMG.png')
+    extra = ''
+    if len(sys.argv) > 4:
+        extra = sys.argv[4]
+
+    plt.savefig('eval/shap/' + file_name + extra + '_IMG.png')
     plt.xscale('symlog')
-    plt.savefig('eval/shap/' + file_name + '_IMG_log.png')
+    plt.savefig('eval/shap/' + file_name + extra + '_IMG_log.png')
 
     
 

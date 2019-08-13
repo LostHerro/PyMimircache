@@ -110,7 +110,8 @@ def create_dist_df(feature_df, samples, dists, start_time, eval=False):
     for t in samples:
         delta = 0
         if not eval:
-            delta = int(random.random() * dists[t])
+            #delta = int(random.random() * dists[t - start_time])
+            delta = int(random.random()**2 * dists[t - start_time])
         
         if delta + t < len(feature_df) + start_time:
             if not eval:
@@ -119,7 +120,7 @@ def create_dist_df(feature_df, samples, dists, start_time, eval=False):
                 logit_dist_val = 0 # dummy value
 
             ser = feature_df.loc[t].to_list()
-            for i in range(3,8):
+            for i in range(5,10):
                 if ser[i] == 0:
                     ser[i] = med_q3*20
             ser += [delta] + [logit_dist_val]
@@ -200,16 +201,16 @@ eval_feat = eval_df.drop(columns=[0,1,2,3,4,
 
 model = CacheNet(p=0.5)
 criterion = torch.nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.05)
+optimizer = optim.Adam(model.parameters(), lr=0.04)
 
-lambda1 = lambda epoch: 0.995
+lambda1 = lambda epoch: 0.99
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda1)
 #train_feat = torch.randn(len(train_target), 34)
 
 model.train()
 print(train_target)
 
-for t in range(300):
+for t in range(400):
     # Forward Pass
     y_pred = model(train_feat)
     y_pred = torch.sigmoid((y_pred - med_q3)/damp_factor)
@@ -252,7 +253,7 @@ with torch.no_grad():
     opt_hr_dict = c.get_hit_ratio_dict('Optimal', cache_size=max_cache_size)
     lru_hr_dict = c.get_hit_ratio_dict('LRU', cache_size=max_cache_size)
     rand_hr_dict = c.get_hit_ratio_dict('Random', cache_size=max_cache_size)
-    lfu_hr_dict = c.get_hit_ratio_dict('LFU', cache_size=max_cache_size)
+    s4lru_hr_dict = c.get_hit_ratio_dict('SLRU', cache_size=max_cache_size)
     arc_hr_dict = c.get_hit_ratio_dict('ARC', cache_size=max_cache_size)
 
     def select_indices(eval_lst, n):
@@ -303,9 +304,10 @@ with torch.no_grad():
     eval_values = [eval_values[i, 0] for i in range(len(eval_values))] """
 
     length = len(eval_ids)
-    cache_size_factor = 1.5
-    cache_sizes = [int(cache_size_factor**i) for i in range(int(np.log(max_cache_size)/
-        np.log(cache_size_factor)) + 1)] + [max_cache_size]
+    #cache_size_factor = 1.5
+    #cache_sizes = [int(cache_size_factor**i) for i in range(int(np.log(max_cache_size)/
+    #    np.log(cache_size_factor)) + 1)] + [max_cache_size]
+    cache_sizes = [i**3 for i in range((int(max_cache_size**(1/3)) + 1))] + [max_cache_size]
     hit_ratios = []
     
     for cache_size in cache_sizes:
@@ -320,7 +322,7 @@ with torch.no_grad():
                 cache[ident] = ts # add to cache
                 if len(cache) > cache_size:
                     # Eviction Process
-                    eviction_process(cache, int(cache_size/50), int(cache_size/1000), ts)
+                    eviction_process(cache, int(cache_size/50), int(cache_size/500), ts)
 
 
 
@@ -350,10 +352,10 @@ with torch.no_grad():
     rand_x.sort()
     rand_hrs = list(rand_hr_dict.values())
     rand_hrs.sort()
-    lfu_x = list(lfu_hr_dict.keys())
-    lfu_x.sort()
-    lfu_hrs = list(lfu_hr_dict.values())
-    lfu_hrs.sort()
+    s4lru_x = list(s4lru_hr_dict.keys())
+    s4lru_x.sort()
+    s4lru_hrs = list(s4lru_hr_dict.values())
+    s4lru_hrs.sort()
     arc_x = list(arc_hr_dict.keys())
     arc_x.sort()
     arc_hrs = list(arc_hr_dict.values())
@@ -364,7 +366,7 @@ with torch.no_grad():
     opt_curve, = plt.plot(opt_x, opt_hrs, 'r-')
     lru_curve, = plt.plot(lru_x, lru_hrs, 'g-')
     rand_curve, = plt.plot(rand_x, rand_hrs, 'k-')
-    lfu_curve, = plt.plot(lfu_x, lfu_hrs, 'm-')
+    s4lru_curve, = plt.plot(s4lru_x, s4lru_hrs, 'm-')
     arc_curve, = plt.plot(arc_x, arc_hrs, 'c-')
     ml_curve, = plt.plot(ml_x, hit_ratios, 'b-')
     
@@ -372,8 +374,8 @@ with torch.no_grad():
 
     plt.xlabel('Cache Size')
     plt.ylabel('Hit Ratio')
-    plt.legend((opt_curve, lru_curve, rand_curve, lfu_curve, arc_curve, ml_curve), ('Optimal', 'LRU',
-        "Random", 'LFU', 'ARC', '\"SmarterCache\"'), loc='lower right', markerscale=1.0)
+    plt.legend((opt_curve, lru_curve, rand_curve, s4lru_curve, arc_curve, ml_curve), ('Optimal', 'LRU',
+        "Random", 'SLRU', 'ARC', '\"SmarterCache\"'), loc='lower right', markerscale=1.0)
     plt.savefig('eval/hrc/' + file_name + '_' + str(time.time()) + '.png')
     plt.close()
     
