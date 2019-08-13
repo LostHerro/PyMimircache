@@ -250,11 +250,14 @@ with torch.no_grad():
     if len(sys.argv) > 3:
         max_cache_size = int(sys.argv[3])
 
-    opt_hr_dict = c.get_hit_ratio_dict('Optimal', cache_size=max_cache_size)
+    comparison_lst = ['Optimal', 'LRU', 'Random', 'SLRU', 'ARC']
+    hit_ratio_dicts = [c.get_hit_ratio_dict(comparison_alg, cache_size=max_cache_size)
+        for comparison_alg in comparison_lst]
+    """ opt_hr_dict = c.get_hit_ratio_dict('Optimal', cache_size=max_cache_size)
     lru_hr_dict = c.get_hit_ratio_dict('LRU', cache_size=max_cache_size)
     rand_hr_dict = c.get_hit_ratio_dict('Random', cache_size=max_cache_size)
     s4lru_hr_dict = c.get_hit_ratio_dict('SLRU', cache_size=max_cache_size)
-    arc_hr_dict = c.get_hit_ratio_dict('ARC', cache_size=max_cache_size)
+    arc_hr_dict = c.get_hit_ratio_dict('ARC', cache_size=max_cache_size) """
 
     def select_indices(eval_lst, n):
         ret = heapdict()
@@ -340,7 +343,9 @@ with torch.no_grad():
     ml_x = cache_sizes
 
     # Inefficient but oh well
-    opt_x = list(opt_hr_dict.keys())
+    comp_x = [sorted(list(hr_dict.keys())) for hr_dict in hit_ratio_dicts]
+    comp_hr = [sorted(list(hr_dict.values())) for hr_dict in hit_ratio_dicts]
+    """ opt_x = list(opt_hr_dict.keys())
     opt_x.sort()
     opt_hrs = list(opt_hr_dict.values())
     opt_hrs.sort()
@@ -359,23 +364,26 @@ with torch.no_grad():
     arc_x = list(arc_hr_dict.keys())
     arc_x.sort()
     arc_hrs = list(arc_hr_dict.values())
-    arc_hrs.sort()
+    arc_hrs.sort() """
 
     plt.figure(0)
 
-    opt_curve, = plt.plot(opt_x, opt_hrs, 'r-')
+    curves = []
+    for i in range(len(comp_x)):
+        curves.append(plt.plot(comp_x[i], comp_hr[i])[0])
+    """ opt_curve, = plt.plot(opt_x, opt_hrs, 'r-')
     lru_curve, = plt.plot(lru_x, lru_hrs, 'g-')
     rand_curve, = plt.plot(rand_x, rand_hrs, 'k-')
     s4lru_curve, = plt.plot(s4lru_x, s4lru_hrs, 'm-')
-    arc_curve, = plt.plot(arc_x, arc_hrs, 'c-')
-    ml_curve, = plt.plot(ml_x, hit_ratios, 'b-')
+    arc_curve, = plt.plot(arc_x, arc_hrs, 'c-')"""
+    ml_curve, = plt.plot(ml_x, hit_ratios)
     
 
 
     plt.xlabel('Cache Size')
     plt.ylabel('Hit Ratio')
-    plt.legend((opt_curve, lru_curve, rand_curve, s4lru_curve, arc_curve, ml_curve), ('Optimal', 'LRU',
-        "Random", 'SLRU', 'ARC', '\"SmarterCache\"'), loc='lower right', markerscale=1.0)
+    plt.legend(tuple(curves + [ml_curve]), tuple(comparison_lst + ['\"SmarterCache\"']),
+        loc='lower right', markerscale=1.0)
     plt.savefig('eval/hrc/' + file_name + '_' + str(time.time()) + '.png')
     plt.close()
     
